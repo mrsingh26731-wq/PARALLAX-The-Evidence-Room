@@ -1,0 +1,32 @@
+CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY, applied_at timestamptz DEFAULT now());
+CREATE TABLE roles(name text PRIMARY KEY);
+INSERT INTO roles VALUES ('ADMIN'),('INVESTIGATOR'),('REVIEWER');
+CREATE TABLE permissions(name text PRIMARY KEY);
+INSERT INTO permissions VALUES ('manage'),('edit'),('read');
+CREATE TABLE role_permissions(role text REFERENCES roles(name),permission text REFERENCES permissions(name),PRIMARY KEY(role,permission));
+INSERT INTO role_permissions VALUES ('ADMIN','manage'),('ADMIN','edit'),('ADMIN','read'),('INVESTIGATOR','edit'),('INVESTIGATOR','read'),('REVIEWER','read');
+CREATE TABLE users(id text PRIMARY KEY,email text UNIQUE NOT NULL,name text NOT NULL,password_hash text NOT NULL,role text NOT NULL REFERENCES roles(name),active boolean NOT NULL DEFAULT true,created_at timestamptz DEFAULT now());
+CREATE TABLE user_sessions(token_hash text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id),csrf text NOT NULL,expires_at timestamptz NOT NULL);
+CREATE INDEX ON user_sessions(user_id);
+CREATE TABLE rate_limits(bucket text PRIMARY KEY,hits integer NOT NULL,expires_at timestamptz NOT NULL);
+CREATE TABLE cases(id text PRIMARY KEY,title text NOT NULL,description text NOT NULL,status text NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','ARCHIVED')),created_by text REFERENCES users(id),created_at timestamptz DEFAULT now());
+CREATE TABLE case_memberships(case_id text REFERENCES cases(id),user_id text REFERENCES users(id),PRIMARY KEY(case_id,user_id));
+CREATE TABLE evidence(id text PRIMARY KEY,case_id text NOT NULL REFERENCES cases(id),title text NOT NULL,category text NOT NULL,classification text NOT NULL CHECK(classification IN ('PUBLIC','INTERNAL','CONFIDENTIAL','RESTRICTED')),version integer NOT NULL DEFAULT 1,created_by text REFERENCES users(id),created_at timestamptz DEFAULT now(),UNIQUE(id,case_id));
+CREATE TABLE evidence_versions(evidence_id text REFERENCES evidence(id),version integer NOT NULL,envelope jsonb NOT NULL,digest text NOT NULL,mac text NOT NULL,author_id text REFERENCES users(id),created_at timestamptz DEFAULT now(),PRIMARY KEY(evidence_id,version));
+CREATE TABLE evidence_connections(id text PRIMARY KEY,case_id text NOT NULL REFERENCES cases(id),source text NOT NULL,target text NOT NULL,label text NOT NULL,FOREIGN KEY(source,case_id) REFERENCES evidence(id,case_id),FOREIGN KEY(target,case_id) REFERENCES evidence(id,case_id),CHECK(source<>target));
+CREATE TABLE evidence_board_positions(case_id text REFERENCES cases(id),user_id text REFERENCES users(id),evidence_id text NOT NULL,x double precision NOT NULL,y double precision NOT NULL,PRIMARY KEY(case_id,user_id,evidence_id),FOREIGN KEY(evidence_id,case_id) REFERENCES evidence(id,case_id));
+CREATE TABLE evidence_access_requests(id text PRIMARY KEY,case_id text NOT NULL,user_id text NOT NULL REFERENCES users(id),evidence_id text NOT NULL,reason text NOT NULL,status text DEFAULT 'PENDING' CHECK(status IN ('PENDING','APPROVED','REJECTED')),reviewer_id text REFERENCES users(id),created_at timestamptz DEFAULT now(),FOREIGN KEY(evidence_id,case_id) REFERENCES evidence(id,case_id));
+CREATE UNIQUE INDEX one_pending_request ON evidence_access_requests(user_id,evidence_id) WHERE status='PENDING';
+CREATE TABLE evidence_access_grants(id text PRIMARY KEY,case_id text NOT NULL,user_id text NOT NULL REFERENCES users(id),evidence_id text NOT NULL,expires_at timestamptz NOT NULL,revoked boolean NOT NULL DEFAULT false,approved_by text NOT NULL REFERENCES users(id),FOREIGN KEY(evidence_id,case_id) REFERENCES evidence(id,case_id));
+CREATE INDEX ON evidence_access_grants(user_id,evidence_id,expires_at);
+CREATE TABLE case_timeline_events(id text PRIMARY KEY,case_id text REFERENCES cases(id),evidence_id text REFERENCES evidence(id),title text NOT NULL,description text NOT NULL,occurred_at timestamptz NOT NULL,fictional boolean DEFAULT true);
+CREATE TABLE audit_logs(id text PRIMARY KEY,user_id text REFERENCES users(id),case_id text REFERENCES cases(id),evidence_id text REFERENCES evidence(id),action text NOT NULL,created_at timestamptz DEFAULT now());
+CREATE INDEX ON audit_logs(case_id,created_at);
+CREATE TABLE investigation_progress(user_id text REFERENCES users(id),case_id text REFERENCES cases(id),chapter integer CHECK(chapter BETWEEN 1 AND 5),completed_at timestamptz DEFAULT now(),PRIMARY KEY(user_id,case_id,chapter));
+CREATE TABLE investigation_findings(id text PRIMARY KEY,user_id text REFERENCES users(id),case_id text REFERENCES cases(id),conclusion_envelope jsonb NOT NULL,created_at timestamptz DEFAULT now());
+CREATE TABLE demo_records(id integer PRIMARY KEY,label text NOT NULL);
+INSERT INTO demo_records VALUES (1,'Northline incident summary'),(2,'Preserved request log'),(3,'Archive index');
+
+CREATE TABLE admin_bootstrap(singleton boolean PRIMARY KEY CHECK(singleton=true),created_at timestamptz DEFAULT now());
+
+CREATE TABLE case_annotations(id text PRIMARY KEY,evidence_id text NOT NULL REFERENCES evidence(id),user_id text NOT NULL REFERENCES users(id),envelope jsonb NOT NULL,created_at timestamptz DEFAULT now());

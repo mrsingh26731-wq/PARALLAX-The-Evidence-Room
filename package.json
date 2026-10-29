@@ -1,0 +1,25 @@
+{
+  "name": "parallax",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "build": "npm run build -w frontend",
+    "test": "npm test -w backend",
+    "db:migrate": "node backend/db/setup.js migrate",
+    "db:seed": "node backend/db/setup.js seed",
+    "admin:create": "node backend/db/setup.js admin",
+    "secrets": "node scripts/secrets.js",
+    "verify:local": "node scripts/verify-local.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}
